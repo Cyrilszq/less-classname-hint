@@ -1,4 +1,4 @@
-# less-classname-hint README
+# README
 
 This extension is inspired by [IntelliSense for CSS class names in HTML](https://github.com/Zignd/HTML-CSS-Class-Completion). I want to support less or scss but that just support css. By the way I want to learn how to write a vscode extension.
 
