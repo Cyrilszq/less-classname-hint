@@ -4,6 +4,7 @@
     "description": "hint classname in js",
     "version": "0.0.2",
     "publisher": "cyrilszq",
+    "repository": "https://github.com/Cyrilszq/less-classname-hint",
     "engines": {
         "vscode": "^1.21.0"
     },
