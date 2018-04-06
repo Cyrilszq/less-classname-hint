@@ -5,18 +5,15 @@ const less = require('less')
 const path = require('path')
 
 // 从css中匹配class
-const classNameRegex = /[.]([\w-]+)/g
+const classNameRegex = /[.]([\w-]+)/
 // 触发提示的字符
 const completionTriggerChars = ['"', "'", " ", "."]
 // 缓存的类名
 let classnameList = new Set()
 // 锁
 let caching = false
+let statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left)
 
-/**
- * 读取文件内容，转成字符串
- * @param {文件地址} uri 
- */
 function readFile(uri) {
     return new Promise((resolve, reject) => {
         fs.readFile(uri, (err, data) => {
@@ -26,40 +23,73 @@ function readFile(uri) {
     })
 }
 
-/**
- * 保存所有类名
- */
-async function catheClassName() {
-    return new Promise(async(resolve, reject) => {
-        try {
-            let uris = await vscode.workspace.findFiles('**/*.less')
-            for(let i = 0; i < uris.length; i++ ) {
-                let uri = uris[i]
-                let textString = await readFile(uri.fsPath)
-                let output = await less.render(textString, {
-                    filename: path.resolve(uri.fsPath)
-                })
-                let ast = css.parse(output.css)
-                ast.stylesheet.rules.forEach(rule => {
-                if (rule.type === "rule") {
-                    rule.selectors.forEach(selector => {
-                        let item = classNameRegex.exec(selector)
-                        while (item) {
-                            classnameList.add(item[1]);
-                            item = classNameRegex.exec(selector)
-                        }
-                    })
-                } 
-                })
-            }
-            resolve(classnameList)
-        } catch (error) {
-            reject(error)
+
+async function startCacheClassName() {
+    if(caching) return
+    caching = true
+    statusBarItem.text = 'caching'
+    classnameList.clear()
+    try {
+        await asyncCache()
+        statusBarItem.text = 'cache classname(cached)'
+    } catch (error) {
+        console.error(error);
+        vscode.window.showErrorMessage('Failed to cache the CSS classes in the workspace');
+        statusBarItem.text = 'cache classname(cache fail)'
+    } finally {
+        caching = false
+    }
+}
+
+async function asyncCache() {
+    let uris = await vscode.workspace.findFiles('**/*.less')
+    let asyncCacheTasks = uris.map((uri, index) => 
+        readFile(uri.fsPath)
+        .then(textString => {
+            return less.parse(textString, {
+                filename: path.resolve(uri.fsPath),
+                javascriptEnabled: true
+            })
+        }).then(ast => {
+            catchToList(ast)
+        })
+        .catch(err => {
+            throw err
+        })
+    )
+    return Promise.all(asyncCacheTasks)
+}
+
+function parseAst(rules, selectors) {
+    if(!rules || !rules.length) return
+    for(let i = 0; i < rules.length; i++) {
+        let rule = rules[i]
+        if(rule.selectors) {
+            selectors.push(rule.selectors)
         }
+        if(rule.rules && rule.rules.length > 0) {
+            parseAst(rule.rules, selectors)
+        }
+    }
+}
+
+function catchToList(ast) {
+    let rules = ast.rules
+    let selectors = []
+    parseAst(ast.rules, selectors)
+    selectors.forEach(selectorArr => {
+        selectorArr.forEach(selector => {
+            selector.elements.forEach(element => {
+                let item = classNameRegex.exec(element.value)
+                if(item) {
+                    classnameList.add(item[1])
+                }
+            })
+        })
     })
 }
 
-// copy from https://github.com/Zignd/HTML-CSS-Class-Completion
+// 配置代码提示框内容
 function provideCompletionItemsGenerator(languageSelector, classMatchRegex, classPrefix = "", splitChar = " ") {
     return vscode.languages.registerCompletionItemProvider(languageSelector, {
         provideCompletionItems(document, position) {
@@ -91,33 +121,18 @@ function provideCompletionItemsGenerator(languageSelector, classMatchRegex, clas
 }
 
 async function activate(context) {
-    await catheClassName();
+    statusBarItem.text = 'caching classname'
+    statusBarItem.command = 'classname.cache'
+    statusBarItem.show()
+    await startCacheClassName()
     context.subscriptions.push(vscode.commands.registerCommand("classname.cache", async () => {
-        if (caching) {
-            return;
-        }
-        caching = true;
-        try {
-            await catheClassName();
-            vscode.window.showInformationMessage('cache success')
-        } catch (err) {
-            err = new VError(err, "Failed to cache the CSS classes in the workspace");
-            console.error(err);
-            vscode.window.showErrorMessage(err.message);
-        } finally {
-            caching = false;
-        }
+        await startCacheClassName()
     }));
      // Javascript based extensions
     ["typescriptreact", "javascript", "javascriptreact"].forEach((extension) => {
         context.subscriptions.push(provideCompletionItemsGenerator(extension, /className=["|']([\w- ]*$)/));
         context.subscriptions.push(provideCompletionItemsGenerator(extension, /class=["|']([\w- ]*$)/));
     });
-
-    let statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left)
-    statusBarItem.text = 'cache classname'
-    statusBarItem.command = 'classname.cache'
-    statusBarItem.show()
 }
 exports.activate = activate;
 
