@@ -17,21 +17,21 @@ let statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.
 function readFile(uri) {
     return new Promise((resolve, reject) => {
         fs.readFile(uri, (err, data) => {
-            if(err) reject(err)
+            if (err) reject(err)
             resolve(data.toString())
         })
     })
 }
 
 
-async function startCacheClassName() {
-    if(caching) return
+async function startCacheClassName(uri = '') {
+    if (caching) return
     caching = true
     statusBarItem.text = 'caching'
-    classnameList.clear()
     try {
-        await asyncCache()
+        await asyncCache(uri)
         statusBarItem.text = 'cache classname(cached)'
+        console.log(classnameList.size)
     } catch (error) {
         console.error(error);
         vscode.window.showErrorMessage('Failed to cache the CSS classes in the workspace');
@@ -41,10 +41,20 @@ async function startCacheClassName() {
     }
 }
 
-async function asyncCache() {
-    let uris = await vscode.workspace.findFiles('**/*.less')
-    let asyncCacheTasks = uris.map((uri, index) => 
-        readFile(uri.fsPath)
+async function asyncCache(uri) {
+    let uris = []
+    let asyncCacheTasks = []
+    if(uri) {
+        return Promise.resolve(createAsyncTask(uri))
+    }
+    classnameList.clear()
+    uris = await vscode.workspace.findFiles('**/*.less')
+    asyncCacheTasks = uris.map((uri, index) => createAsyncTask(uri))
+    return Promise.all(asyncCacheTasks)
+}
+
+function createAsyncTask(uri) {
+    return readFile(uri.fsPath)
         .then(textString => {
             return less.parse(textString, {
                 filename: path.resolve(uri.fsPath),
@@ -56,18 +66,16 @@ async function asyncCache() {
         .catch(err => {
             throw err
         })
-    )
-    return Promise.all(asyncCacheTasks)
 }
 
 function parseAst(rules, selectors) {
-    if(!rules || !rules.length) return
-    for(let i = 0; i < rules.length; i++) {
+    if (!rules || !rules.length) return
+    for (let i = 0; i < rules.length; i++) {
         let rule = rules[i]
-        if(rule.selectors) {
+        if (rule.selectors) {
             selectors.push(rule.selectors)
         }
-        if(rule.rules && rule.rules.length > 0) {
+        if (rule.rules && rule.rules.length > 0) {
             parseAst(rule.rules, selectors)
         }
     }
@@ -81,7 +89,7 @@ function catchToList(ast) {
         selectorArr.forEach(selector => {
             selector.elements.forEach(element => {
                 let item = classNameRegex.exec(element.value)
-                if(item) {
+                if (item) {
                     classnameList.add(item[1])
                 }
             })
@@ -106,7 +114,7 @@ function provideCompletionItemsGenerator(languageSelector, classMatchRegex, clas
             // Will store the classes found on the class attribute
             // const classesOnAttribute = rawClasses[1].split(splitChar);
             const completionItems = []
-            for(let classname of classnameList.values()) {
+            for (let classname of classnameList.values()) {
                 const completionItem = new vscode.CompletionItem(classname, vscode.CompletionItemKind.Variable);
                 const completionClassName = `${classPrefix}${classname}`;
 
@@ -128,11 +136,18 @@ async function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand("classname.cache", async () => {
         await startCacheClassName()
     }));
-     // Javascript based extensions
+    // Javascript based extensions
     ["typescriptreact", "javascript", "javascriptreact"].forEach((extension) => {
         context.subscriptions.push(provideCompletionItemsGenerator(extension, /className=["|']([\w- ]*$)/));
         context.subscriptions.push(provideCompletionItemsGenerator(extension, /class=["|']([\w- ]*$)/));
     });
+    vscode.workspace.onDidSaveTextDocument((e) => {
+        let path = e.uri.fsPath
+        let lessRe = /\.less$/
+        if (lessRe.test(path)) {
+            startCacheClassName(e.uri)
+        }
+    })
 }
 exports.activate = activate;
 

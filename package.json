@@ -2,7 +2,7 @@
     "name": "less-classname-hint",
     "displayName": "less-className-hint",
     "description": "hint classname in js",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "publisher": "cyrilszq",
     "repository": "https://github.com/Cyrilszq/less-classname-hint",
     "engines": {
