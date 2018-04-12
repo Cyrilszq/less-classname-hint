@@ -31,7 +31,6 @@ async function startCacheClassName(uri = '') {
     try {
         await asyncCache(uri)
         statusBarItem.text = 'cache classname(cached)'
-        console.log(classnameList.size)
     } catch (error) {
         console.error(error);
         vscode.window.showErrorMessage('Failed to cache the CSS classes in the workspace');
@@ -48,7 +47,8 @@ async function asyncCache(uri) {
         return Promise.resolve(createAsyncTask(uri))
     }
     classnameList.clear()
-    uris = await vscode.workspace.findFiles('**/*.less')
+    uris = await vscode.workspace.findFiles('**/*.less', 'node_modules')
+    console.log(uris)
     asyncCacheTasks = uris.map((uri, index) => createAsyncTask(uri))
     return Promise.all(asyncCacheTasks)
 }
